@@ -6,19 +6,11 @@
     <title>mediaplayer DUI</title>
     <style>
         html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-        #stage, #media, #cover { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-        /* The embed stays in the layout so its iframe keeps working; whatever is on top hides it. */
-        #stage { z-index: 1; }
-        #media { z-index: 2; background: #000; object-fit: contain; }
-        #cover { z-index: 3; background: #000; }
-        [hidden] { display: none !important; }
+        #player { width: 100%; height: 100%; border: 0; }
     </style>
 </head>
 <body>
-    <video id="media" playsinline hidden></video>
-    <audio id="track"></audio>
-    <div id="stage"><div id="player"></div></div>
-    <div id="cover"></div>
+    <div id="player"></div>
     <script src="dui.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
 </body>
