@@ -88,7 +88,7 @@
         return !!data.isLive && data.video_id === videoId;
     }
 
-    // For a livestream getDuration() is the current live head, so seeking there jumps to live.
+    // For a livestream getDuration() is at or past the live edge, and YouTube clamps a seek there to live.
     function seekToLive() {
         const head = player.getDuration();
         if (head > 0) seek(head);
