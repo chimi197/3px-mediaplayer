@@ -23,6 +23,7 @@
     let desired = null;
     let lastSeek = 0;
     let wasAd = false;
+    let live = false;             // currentItem is a livestream
     const reportedInfo = new Set();
     const reportedError = new Set();
 
@@ -81,6 +82,18 @@
         else player.loadVideoById(opts);
     }
 
+    function isLiveVideo(videoId) {
+        let data = {};
+        try { data = player.getVideoData() || {}; } catch (e) { /* not available */ }
+        return !!data.isLive && data.video_id === videoId;
+    }
+
+    // For a livestream getDuration() is the current live head, so seeking there jumps to live.
+    function seekToLive() {
+        const head = player.getDuration();
+        if (head > 0) seek(head);
+    }
+
     // Duration/title are only trusted while the real video (not an ad) is playing.
     function maybeReportInfo(state) {
         if (currentItem === null || reportedInfo.has(currentItem)) return;
@@ -121,6 +134,7 @@
         if (currentItem !== d.itemId) {
             currentItem = d.itemId;
             wasAd = false;
+            live = false;
             load(d.videoId, Math.max(0, d.position || 0), d.paused);
             return;
         }
@@ -143,6 +157,24 @@
 
         const state = player.getPlayerState();
         maybeReportInfo(state);
+
+        if (!live && state === S.PLAYING && isLiveVideo(d.videoId)) {
+            live = true;
+            seekToLive();
+            return;
+        }
+
+        // A livestream has no synced position (the server's is just time since play was
+        // pressed, not a point in the stream), so it is never seeked to it: only to the live edge.
+        if (live) {
+            if (d.paused) {
+                if (state === S.PLAYING || state === S.BUFFERING) player.pauseVideo();
+            } else if (state === S.PAUSED || ((state === S.CUED || state === S.ENDED) && Date.now() - lastSeek > SEEK_COOLDOWN)) {
+                seekToLive();
+                player.playVideo();
+            }
+            return;
+        }
 
         const target = Math.max(0, d.position || 0);
         const canSeek = Date.now() - lastSeek > SEEK_COOLDOWN;
