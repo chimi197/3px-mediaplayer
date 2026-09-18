@@ -9,7 +9,7 @@
     'use strict';
 
     const params = new URLSearchParams(location.hash.slice(1));
-    const resource = params.get('resource') || 'tpx-mediaplayer';
+    const resource = params.get('resource') || '3pixeli-mediaplayer';
     const handle = params.get('handle') || '';
 
     const SYNC_TOLERANCE = 2.5;   // seconds of drift allowed before seeking
