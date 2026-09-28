@@ -214,22 +214,42 @@
 
     let audioCtx = null;
     let analyser = null;
+    let lowpass = null;
+    let dry = null;
+    let wet = null;
     let routedVideo = null;
     let freq = null;
     let audioFailed = false;
 
-    function getAnalyser() {
-        if (audioFailed) return null;
+    // A second of decaying noise: a cheap, convincing room reverb.
+    function makeImpulse(ctx, seconds) {
+        const length = Math.floor(ctx.sampleRate * seconds);
+        const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+        for (let channel = 0; channel < 2; channel++) {
+            const data = impulse.getChannelData(channel);
+            for (let i = 0; i < length; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
+            }
+        }
+        return impulse;
+    }
+
+    // video -> lowpass -> dry ----------> analyser -> speakers
+    //                  \-> reverb -> wet -/
+    // With no effect the lowpass is wide open and wet is silent, so routing
+    // audio through this changes nothing until a drug effect asks it to.
+    function routeAudio() {
+        if (audioFailed) return false;
         const video = innerVideo();
-        if (!video) return null;
-        if (routedVideo === video) return analyser;
+        if (!video) return false;
+        if (routedVideo === video) return true;
 
         try {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state !== 'running') {
                 // Don't route audio through a context that isn't running, or it would go silent.
                 audioCtx.resume();
-                return null;
+                return false;
             }
             if (!analyser) {
                 analyser = audioCtx.createAnalyser();
@@ -237,14 +257,47 @@
                 analyser.smoothingTimeConstant = 0.72;
                 analyser.connect(audioCtx.destination);
                 freq = new Uint8Array(analyser.frequencyBinCount);
+
+                lowpass = audioCtx.createBiquadFilter();
+                lowpass.type = 'lowpass';
+                lowpass.frequency.value = audioCtx.sampleRate / 2;
+                dry = audioCtx.createGain();
+                wet = audioCtx.createGain();
+                wet.gain.value = 0;
+                const reverb = audioCtx.createConvolver();
+                reverb.buffer = makeImpulse(audioCtx, 1.8);
+
+                lowpass.connect(dry).connect(analyser);
+                lowpass.connect(reverb).connect(wet).connect(analyser);
             }
-            audioCtx.createMediaElementSource(video).connect(analyser);
+            audioCtx.createMediaElementSource(video).connect(lowpass);
             routedVideo = video;
-            return analyser;
+            return true;
         } catch (e) {
             audioFailed = true;
-            return null;
+            return false;
         }
+    }
+
+    function getAnalyser() {
+        return routeAudio() ? analyser : null;
+    }
+
+    let appliedEffect = 'none';
+
+    function applyEffect(effect) {
+        const key = effect ? `${effect.lowpass}:${effect.reverb}` : 'none';
+        if (key === appliedEffect) return;
+        // Nothing to undo if audio was never routed; wait for it otherwise.
+        if (!effect && !routedVideo) { appliedEffect = key; return; }
+        if (!routeAudio()) return;
+
+        const now = audioCtx.currentTime;
+        const reverb = effect ? Math.max(0, Math.min(1, effect.reverb || 0)) : 0;
+        lowpass.frequency.setTargetAtTime(effect && effect.lowpass ? effect.lowpass : audioCtx.sampleRate / 2, now, 0.4);
+        wet.gain.setTargetAtTime(reverb, now, 0.4);
+        dry.gain.setTargetAtTime(1 - reverb * 0.5, now, 0.4);
+        appliedEffect = key;
     }
 
     function computeLevels() {
@@ -315,5 +368,6 @@
         if (!msg || msg.type !== 'sync') return;
         desired = msg;
         apply();
+        applyEffect(msg.effect);
     });
 })();
